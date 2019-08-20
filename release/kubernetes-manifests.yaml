@@ -205,22 +205,6 @@ spec:
           image: gcr.io/jc-gke-1/frontend:v0.1.2
           ports:
           - containerPort: 8080
-          readinessProbe:
-            initialDelaySeconds: 10
-            httpGet:
-              path: "/_healthz"
-              port: 8080
-              httpHeaders:
-              - name: "Cookie"
-                value: "shop_session-id=x-readiness-probe"
-          livenessProbe:
-            initialDelaySeconds: 10
-            httpGet:
-              path: "/_healthz"
-              port: 8080
-              httpHeaders:
-              - name: "Cookie"
-                value: "shop_session-id=x-liveness-probe"
           env:
           - name: PORT
             value: "8080"
@@ -447,17 +431,6 @@ spec:
     spec:
       terminationGracePeriodSeconds: 5
       restartPolicy: Always
-      initContainers:
-      - name: wait-frontend
-        image: alpine:3.6
-        command: ['sh', '-c', 'set -x;  apk add --no-cache curl && 
-          until timeout -t 2 curl -f "http://${FRONTEND_ADDR}"; do 
-            echo "waiting for http://${FRONTEND_ADDR}"; 
-            sleep 2;
-          done;']
-        env:
-        - name: FRONTEND_ADDR
-          value: "frontend:80"
       containers:
       - name: main
         image: gcr.io/jc-gke-1/loadgenerator:v0.1.2
