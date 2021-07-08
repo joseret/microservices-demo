@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+    "strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -53,6 +54,7 @@ var (
 	extraLatency time.Duration
 
 	port = "3550"
+    mod int64 = 60
 
 	reloadCatalog bool
 )
@@ -240,6 +242,18 @@ func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Hea
 
 func (p *productCatalog) ListProducts(context.Context, *pb.Empty) (*pb.ListProductsResponse, error) {
 	time.Sleep(extraLatency)
+
+    // Manually injected failures for SLO testing
+    // Defaults to failing requests every 60 seconds
+    // Actual # of failed requests will depend on concurrency
+    if os.Getenv("SLO_FAILURE_MOD") != "" {
+        mod, _ = strconv.ParseInt(os.Getenv("SLO_FAILURE_MOD"), 10, 64)
+    }
+    if time.Now().Unix() % mod == 0 {
+        return nil, status.Errorf(codes.Internal, "Randomized failure (mod: %s) generated to demonstrate SLO burn", mod)
+    }
+    // End injected failure code
+
 	return &pb.ListProductsResponse{Products: parseCatalog()}, nil
 }
 
