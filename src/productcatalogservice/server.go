@@ -23,7 +23,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
-    "strconv"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -53,8 +53,9 @@ var (
 	log          *logrus.Logger
 	extraLatency time.Duration
 
-	port = "3550"
-    mod int64 = 60
+	port                           = "3550"
+	mod                      int64 = 0
+	error_generation_counter int64 = 60
 
 	reloadCatalog bool
 )
@@ -106,6 +107,17 @@ func main() {
 		log.Infof("extra latency enabled (duration: %v)", extraLatency)
 	} else {
 		extraLatency = time.Duration(0)
+	}
+
+	// set injected latency
+	if s := os.Getenv("SLO_FAULT_MOD"); s != "" {
+		v, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			log.Fatalf("failed to parse SLO_FAULT_MOD (%s) as int64.ParseInt: %+v", v, err)
+		}
+		mod = v
+		error_generation_counter = v
+		log.Infof("SLO_FAULT_MOD enabled (duration: %v)", error_generation_counter)
 	}
 
 	sigs := make(chan os.Signal, 1)
@@ -243,16 +255,22 @@ func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Hea
 func (p *productCatalog) ListProducts(context.Context, *pb.Empty) (*pb.ListProductsResponse, error) {
 	time.Sleep(extraLatency)
 
-    // Manually injected failures for SLO testing
-    // Defaults to failing requests every 60 seconds
-    // Actual # of failed requests will depend on concurrency
-    if os.Getenv("SLO_FAILURE_MOD") != "" {
-        mod, _ = strconv.ParseInt(os.Getenv("SLO_FAILURE_MOD"), 10, 64)
-    }
-    if time.Now().Unix() % mod == 0 {
-        return nil, status.Errorf(codes.Internal, "Randomized failure (mod: %s) generated to demonstrate SLO burn", mod)
-    }
-    // End injected failure code
+	// Manually injected failures for SLO testing
+	// Defaults to failing requests every 60 seconds
+	// Actual # of failed requests will depend on concurrency
+	if mod > 0 {
+		error_generation_counter--
+		if error_generation_counter < 0 {
+			log.Warnf("SLO_FAILURE_MOD (mod: %v,time: %v) set to demonstrate SLO burn", mod, time.Now().Unix())
+			error_generation_counter = mod
+
+			return nil, status.Errorf(500, "Randomized failure (mod: %s) generated to demonstrate SLO burn", mod)
+		}
+	}
+	// if (time.Now().Unix() % mod) < (0.2 *(float64) mod) {
+	// 	return nil, status.Errorf(codes.Internal, "Randomized failure (mod: %s) generated to demonstrate SLO burn", mod)
+	// }
+	// End injected failure code
 
 	return &pb.ListProductsResponse{Products: parseCatalog()}, nil
 }
