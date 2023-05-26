@@ -40,6 +40,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"google.golang.org/grpc/metadata"
+
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -252,17 +254,26 @@ func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Hea
 	return status.Errorf(codes.Unimplemented, "health check via Watch not implemented")
 }
 
-func (p *productCatalog) ListProducts(context.Context, *pb.Empty) (*pb.ListProductsResponse, error) {
+func (p *productCatalog) ListProducts(ctx context.Context, _ *pb.Empty) (*pb.ListProductsResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
 	time.Sleep(extraLatency)
 
 	// Manually injected failures for SLO testing
 	// Defaults to failing requests every 60 seconds
 	// Actual # of failed requests will depend on concurrency
+	traceId := []string{}
+	if _, ok := md["x-request-id"]; ok {
+		traceId, _ = md["x-request-id"]
+	}
 	if mod > 0 {
 		error_generation_counter--
 		if error_generation_counter < 0 {
 			log.Warnf("SLO_FAILURE_MOD (mod: %v,time: %v) set to demonstrate SLO burn", mod, time.Now().Unix())
 			error_generation_counter = mod
+			log.WithFields(
+				logrus.Fields{
+					"logging.googleapis.com/trace": "projects/jr-anthos-mc-1-6149/traces/" + traceId[0],
+				}).Warnf("SLO_FAILURE_MOD (mod: %v,time: %v) set to demonstrate SLO burn", mod, time.Now().Unix())
 
 			return nil, status.Errorf(500, "Randomized failure (mod: %s) generated to demonstrate SLO burn", mod)
 		}

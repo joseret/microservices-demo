@@ -26,20 +26,19 @@
 # `gcloud builds submit --config=cloudbuild.yaml --substitutions=_ZONE=us-central1-b,_CLUSTER=demo-app-staging .`
 
 steps:
-- id: 'Deploy application to cluster'
-  name: 'gcr.io/k8s-skaffold/skaffold:v2.0.4'
-  entrypoint: 'bash'
-  args:
-  - '-c'
-  - >
-
-    skaffold build -f=skaffold.yaml --default-repo=gcr.io/$PROJECT_ID;
+  - id: "Deploy application to cluster"
+    name: "gcr.io/k8s-skaffold/skaffold:v2.0.4"
+    entrypoint: "bash"
+    args:
+      - "-c"
+      - >
+        gcloud auth configure-docker us-docker.pkg.dev;
+        skaffold build -f=skaffold.yaml --default-repo=us-docker.pkg.dev/jr-network-infra-1-4978/joseret-joonix-docker;
 
 #    gcloud container clusters get-credentials --zone=$_ZONE $_CLUSTER;
 
 # Add more power, and more time, for heavy Skaffold build
-timeout: '3600s'
+timeout: "3600s"
 options:
-  machineType: 'N1_HIGHCPU_8'
-  
+  machineType: "N1_HIGHCPU_8"
 # [END cloudbuild_microservice_demo_cloudbuild]
