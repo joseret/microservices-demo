@@ -42,7 +42,7 @@ spec:
                 - all
             privileged: false
             readOnlyRootFilesystem: true
-          image: us-docker.pkg.dev/jr-network-infra-1-4978/joseret-joonix-docker/frontend
+          image: us-docker.pkg.dev/jr-network-infra-1-4978/joseret-joonix-docker/frontend:v0.1.2-782-g2070b56-dirty
           ports:
             - containerPort: 8080
           readinessProbe:
