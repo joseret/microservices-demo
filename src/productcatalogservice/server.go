@@ -256,14 +256,15 @@ func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Hea
 
 func (p *productCatalog) ListProducts(ctx context.Context, _ *pb.Empty) (*pb.ListProductsResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
+	// log.Warnf("SLO_FAILURE_MOD (md: %v)", md)
 	time.Sleep(extraLatency)
 
 	// Manually injected failures for SLO testing
 	// Defaults to failing requests every 60 seconds
 	// Actual # of failed requests will depend on concurrency
-	traceId := []string{}
-	if _, ok := md["x-request-id"]; ok {
-		traceId, _ = md["x-request-id"]
+	traceId := []string{"?"}
+	if _, ok := md["x-b3-traceid"]; ok {
+		traceId, _ = md["x-b3-traceid"]
 	}
 	if mod > 0 {
 		error_generation_counter--
