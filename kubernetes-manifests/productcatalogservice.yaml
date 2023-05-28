@@ -41,7 +41,7 @@ spec:
                 - all
             privileged: false
             readOnlyRootFilesystem: true
-          image: us-docker.pkg.dev/jr-network-infra-1-4978/joseret-joonix-docker/productcatalogservice:v3.1.2
+          image: us-docker.pkg.dev/jr-network-infra-1-4978/joseret-joonix-docker/productcatalogservice:v3.1.3
           ports:
             - containerPort: 3550
           env:

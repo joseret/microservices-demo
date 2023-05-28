@@ -99,10 +99,18 @@ func main() {
 
 	svc := new(frontendServer)
 
-	otel.SetTextMapPropagator(
-		propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{}, propagation.Baggage{}, b3.New()))
-
+	switch os.Getenv("PROPAGATION") {
+	case "B3":
+		log.Info("Propaagator B3.")
+		otel.SetTextMapPropagator(
+			propagation.NewCompositeTextMapPropagator(
+				propagation.TraceContext{}, propagation.Baggage{}, b3.New()))
+	default:
+		log.Info("Propaagator Default.")
+		otel.SetTextMapPropagator(
+			propagation.NewCompositeTextMapPropagator(
+				propagation.TraceContext{}, propagation.Baggage{}))
+	}
 	if os.Getenv("ENABLE_TRACING") == "1" {
 		log.Info("Tracing enabled.")
 		initTracing(log, ctx, svc)

@@ -42,7 +42,7 @@ spec:
                 - all
             privileged: false
             readOnlyRootFilesystem: true
-          image: us-docker.pkg.dev/jr-network-infra-1-4978/joseret-joonix-docker/frontend:v3.1.0
+          image: us-docker.pkg.dev/jr-network-infra-1-4978/joseret-joonix-docker/frontend:v3.1.2
           ports:
             - containerPort: 8080
           readinessProbe:
@@ -84,6 +84,10 @@ spec:
             #   value: "aws"
             - name: ENABLE_PROFILER
               value: "0"
+            - name: GRPC_TRACE
+              value: "all"             
+            - name: GRPC_VERBOSITY
+              value: "DEBUG"  
           # - name: CYMBAL_BRANDING
           #   value: "true"
           resources:

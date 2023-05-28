@@ -263,6 +263,7 @@ func (p *productCatalog) ListProducts(ctx context.Context, _ *pb.Empty) (*pb.Lis
 	// Defaults to failing requests every 60 seconds
 	// Actual # of failed requests will depend on concurrency
 	traceId := []string{"?"}
+	log.Warnf("SLO_FAILURE_MOD (md: %v)", md)
 	if _, ok := md["x-b3-traceid"]; ok {
 		traceId, _ = md["x-b3-traceid"]
 	}
