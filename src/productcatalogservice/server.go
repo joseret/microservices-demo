@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -37,6 +39,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -55,6 +58,13 @@ var (
 	port = "3550"
 
 	reloadCatalog bool
+
+	// Additional Errors Support - joseret
+	is_simulate_list_product_error       = false
+	mod                            int64 = 0
+	error_generation_counter       int64 = 60
+	dump_metadata                        = false
+	traceProjectId                       = "?"
 )
 
 func init() {
@@ -69,6 +79,7 @@ func init() {
 	}
 	log.Out = os.Stdout
 	catalogMutex = &sync.Mutex{}
+	log.Warn("B4-readCatalogFile")
 	err := readCatalogFile(&cat)
 	if err != nil {
 		log.Warnf("could not parse product catalog")
@@ -105,7 +116,29 @@ func main() {
 	} else {
 		extraLatency = time.Duration(0)
 	}
+	traceProjectId = getProjectId()
+	// set injected latency
+	if s := os.Getenv("SLO_FAILURE_MOD"); s != "" {
+		v, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			log.Fatalf("failed to parse SLO_FAILURE_MOD (%s) as int64.ParseInt: %+v", v, err)
+		} else {
+			is_simulate_list_product_error = true
+			mod = v
+			error_generation_counter = v
+			log.Infof("SLO_FAILURE_MOD enabled (duration: %v)", error_generation_counter)
+		}
+	}
 
+	if s := os.Getenv("SLO_FAILURE_MOD_DUMP_METADATA"); s != "" {
+		v, err := strconv.ParseBool(s)
+		if err != nil {
+			log.Fatalf("failed to parse SLO_FAILURE_MOD_DUMP_METADATA (%s) as bool: %+v", v, err)
+		} else {
+			dump_metadata = true
+			log.Infof("SLO_FAILURE_MOD_DUMP_METADATA enabled (dump metadata: %v)", dump_metadata)
+		}
+	}
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGUSR1, syscall.SIGUSR2)
 	go func() {
@@ -150,6 +183,33 @@ func run(port string) string {
 	healthpb.RegisterHealthServer(srv, svc)
 	go srv.Serve(l)
 	return l.Addr().String()
+}
+
+func getProjectId() string {
+	projectId := "?"
+	req, err := http.NewRequest("GET", "http://metadata.google.internal/computeMetadata/v1/project/project-id", nil)
+	if err != nil {
+		log.Fatalf("failed to get metadata", err)
+		return projectId
+	}
+	req.Header.Set("Metadata-Flavor", "Google")
+	client := http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		log.Fatalf("failed to get metata call body", err)
+		return projectId
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalf("failed to get metata call body", err)
+		return projectId
+	}
+
+	return string(body)
+
 }
 
 func initStats() {
@@ -205,8 +265,19 @@ func initProfiling(service, version string) {
 type productCatalog struct{}
 
 func readCatalogFile(catalog *pb.ListProductsResponse) error {
+	log.Warn("readCatalogFile-IN")
 	catalogMutex.Lock()
 	defer catalogMutex.Unlock()
+	files, err := os.ReadDir(".")
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		currentDirectory, err := os.Getwd()
+		log.Warnf("currentDirecotry-[%v]-[%v]", currentDirectory, err)
+		for _, file := range files {
+			log.Warnf("file-[%v]", file)
+		}
+	}
 	catalogJSON, err := ioutil.ReadFile("products.json")
 	if err != nil {
 		log.Fatalf("failed to open product catalog json file: %v", err)
@@ -238,8 +309,53 @@ func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Hea
 	return status.Errorf(codes.Unimplemented, "health check via Watch not implemented")
 }
 
-func (p *productCatalog) ListProducts(context.Context, *pb.Empty) (*pb.ListProductsResponse, error) {
+func getMetadata(md map[string][]string, key string, def string) string {
+	log.Infof("getMetadata - Dump Metadata (md: %v)", md)
+	v, ok := md[key]
+	log.Infof("getMetadata - Dump Metadata (v: %v)", v)
+	if !ok {
+		return def
+	}
+	if len(v) < 1 {
+		return def
+	}
+	if key == "x-b3-sampled" && v[0] == "1" {
+		return "true"
+	}
+	return v[0]
+
+}
+
+func (p *productCatalog) ListProducts(ctx context.Context, _ *pb.Empty) (*pb.ListProductsResponse, error) {
+	// Trace - ASM
+	md, _ := metadata.FromIncomingContext(ctx)
+	if dump_metadata {
+		log.Infof("SLO_FAILURE_MOD - Dump Metadata (md: %v)", md)
+	}
 	time.Sleep(extraLatency)
+
+	traceId := getMetadata(md, "x-b3-traceid", "?")
+	spanId := getMetadata(md, "x-b3-spanid", "?")
+	traceSampled := getMetadata(md, "x-b3-sampled", "false")
+	traceSampledLogical := false
+	traceSampledLogical, _ = strconv.ParseBool(traceSampled)
+	if is_simulate_list_product_error {
+		if mod > 0 {
+			error_generation_counter--
+			if error_generation_counter < 0 {
+				log.Warnf("SLO_FAILURE_MOD - SLO BURN (mod: %v,time: %v, traseSampled: %v)", mod, time.Now().Unix(), traceSampledLogical)
+				error_generation_counter = mod
+				log.WithFields(
+					logrus.Fields{
+						"logging.googleapis.com/trace":         "projects/" + traceProjectId + "/traces/" + traceId,
+						"logging.googleapis.com/spanId":        spanId,
+						"logging.googleapis.com/trace_sampled": traceSampledLogical,
+					}).Warnf("SLO_FAILURE_MOD (mod: %v,time: %v) set to demonstrate SLO burn", mod, time.Now().Unix())
+
+				return nil, status.Errorf(500, "Randomized failure (mod: %s) generated to demonstrate SLO burn", mod)
+			}
+		}
+	}
 	return &pb.ListProductsResponse{Products: parseCatalog()}, nil
 }
 
